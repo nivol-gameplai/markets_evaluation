@@ -17,3 +17,9 @@ func CreateClient(ctx context.Context) *firestore.Client {
 	}
 	return client
 }
+
+func closeClient(client *firestore.Client) {
+	err := client.Close()
+	if err != nil {
+	}
+}

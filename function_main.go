@@ -18,7 +18,8 @@ func main() {
 			return
 		}
 	})
-	http.HandleFunc("/markets/", indexHandler)
+	http.HandleFunc("/markets/", marketsEvaluationHandler)
+	http.HandleFunc("/freeze/", marketsSuspensionHandler)
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -30,11 +31,20 @@ func main() {
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
 }
 
-func indexHandler(w http.ResponseWriter, r *http.Request) {
+func marketsSuspensionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, err := fi.FetchAndEvaluate("28810038", "away_2pt", 111)
+	_, err := fi.MarketSuspension("28810038", "3416", -1)
 	if err != nil {
-		return
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func marketsEvaluationHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_, err := fi.FetchAndEvaluate("28810038", "home_2pt", 125)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 	w.WriteHeader(http.StatusOK)
 }
