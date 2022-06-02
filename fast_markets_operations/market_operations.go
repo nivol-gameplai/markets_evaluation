@@ -63,7 +63,10 @@ func updateSuspensionOnDocs(odd map[string]interface{}, currentScore int64,
 	if currentScore >= 0 {
 		odd["is_active"] = false
 	}
-	tx.Set(&ref, odd)
+	err := tx.Set(&ref, odd)
+	if err != nil {
+		return
+	}
 
 }
 
@@ -82,7 +85,8 @@ func teamMarketsEvaluation(odd map[string]interface{}, teamScore int64, additive
 	return nil
 }
 
-func evaluateMarket(odd map[string]interface{}, playerOrTeamScore int64, returnOdd chan map[string]interface{}) {
+func evaluateMarket(odd map[string]interface{}, playerOrTeamScore int64,
+	tx *firestore.Transaction, ref firestore.DocumentRef, wg *sync.WaitGroup) {
 	//TODO CHECK IF THE CURRENT SCORE ON THE ODD (THE ONE OF DURING THE ODD CREATION)
 	//TODO + THE 2 POINTS ETC == FULFILLMENT SCORE AND CURRENT SCORE FROM MESSAGE AND IF MISSED HAVE A REPLAY FUNCTION
 	//TODO RUN THE API AGAIN AND CHECK ALL ACTIVES AND RE-CLOSE BY REPLAYING ALL EVENTS FROM SCRATCH AND PUT STATUS TO DEFFERED
@@ -90,6 +94,7 @@ func evaluateMarket(odd map[string]interface{}, playerOrTeamScore int64, returnO
 	//TODO DONE CONTINIOUSLY THROUGHOUT THE GAME , TO MAKE SURE ALL MARKETS ARE PROCESSED WHILE ACTIVE
 
 	//TODO ALOSSSSSOOOO WHEN MARKETS CLOSED AS WON OR LOST SEND MESSAGE TO EVAL BETS AS NOW WE ARE SURE MARKETS ARE CLOSED :)
+	defer wg.Done()
 	var oddState *string
 	oddState = nil
 	marketID := odd["market_id"].(string)
@@ -105,7 +110,10 @@ func evaluateMarket(odd map[string]interface{}, playerOrTeamScore int64, returnO
 		odd["result"] = oddState
 		odd["modified"] = time.Now().UnixNano() / int64(time.Millisecond)
 	}
-	returnOdd <- odd
+	err := tx.Set(&ref, odd)
+	if err != nil {
+		return
+	}
 	//log.Println(<-returnOdd)
 }
 
@@ -120,7 +128,8 @@ func FetchAndEvaluate(gameId string, marketId string, homeOrAwayScore int64) ([]
 	}(client)
 
 	var query firestore.Query
-	returnOdd := make(chan map[string]interface{})
+
+	var wg sync.WaitGroup
 
 	err := client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		col := client.Collection("Odds")
@@ -135,14 +144,14 @@ func FetchAndEvaluate(gameId string, marketId string, homeOrAwayScore int64) ([]
 					break
 				}
 			}
-			log.Println(doc.Data())
-			go evaluateMarket(doc.Data(), homeOrAwayScore, returnOdd)
-			err = tx.Set(doc.Ref, <-returnOdd, firestore.MergeAll)
+			wg.Add(1)
+			go evaluateMarket(doc.Data(), homeOrAwayScore, tx, *doc.Ref, &wg)
+
 			if err != nil {
 				return err
 			}
 		}
-
+		wg.Wait()
 		return nil
 	})
 	if err != nil {
