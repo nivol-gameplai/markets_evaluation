@@ -3,16 +3,69 @@ package fast_markets_operations
 import (
 	"cloud.google.com/go/firestore"
 	"context"
+	"github.com/gomodule/redigo/redis"
 	"google.golang.org/api/iterator"
 	"log"
+	"marketsEvaluation/fast_markets_operations/configs"
 	"sync"
 	"time"
 )
 
+var redisPool *redis.Pool
+
+func DetermineSuspensionStrategy(strategy string, currentTeamPossession string, homeTeamId string, gameId string,
+	awayTeamId string) {
+	if strategy == "next_bucket" {
+		var previousTeamPossession string
+		previousTeamPossession = ""
+		var teamMarketsToSuspend string
+		if redisPool == nil {
+			// Pre-declare err to avoid shadowing redisPool
+			var err error
+			redisPool, err = configs.InitializeRedis()
+			if err != nil {
+				return
+			}
+		}
+		conn := redisPool.Get()
+		defer func(conn redis.Conn) {
+			err := conn.Close()
+			if err != nil {
+				return
+			}
+		}(conn)
+		exists, err := redis.Int(conn.Do("EXISTS", gameId+"_possession"))
+		if err != nil {
+			return
+		} else if exists != 0 {
+			previousTeamPossession, err = redis.String(conn.Do("GET", gameId+"_possession"))
+			if err != nil {
+				return
+			}
+		}
+		if currentTeamPossession != previousTeamPossession {
+			if currentTeamPossession == homeTeamId {
+				teamMarketsToSuspend = awayTeamId
+			} else {
+				teamMarketsToSuspend = homeTeamId
+			}
+			_, err = MarketSuspension(gameId, teamMarketsToSuspend, -1)
+			if err != nil {
+				log.Fatal(err)
+				return
+			}
+			_, err = conn.Do("SET", gameId+"_possession", currentTeamPossession, "EX", "86400")
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+}
+
 func MarketSuspension(gameId string, teamId string, currentScore int64) ([]byte, error) {
 	ctx := context.Background()
-	client := CreateClient(ctx)
-	defer closeClient(client)
+	client := configs.CreateClient(ctx)
+	defer configs.CloseClient(client)
 	var query firestore.Query
 	col := client.Collection("Odds")
 	var wg sync.WaitGroup
@@ -81,6 +134,7 @@ func teamMarketsEvaluation(odd map[string]interface{}, teamScore int64, additive
 			ret := "LOST"
 			return &ret
 		}
+		//	TODO SEND MESSAGE FOR BETS EVAL
 	}
 	return nil
 }
@@ -120,7 +174,7 @@ func evaluateMarket(odd map[string]interface{}, playerOrTeamScore int64,
 func FetchAndEvaluate(gameId string, marketId string, homeOrAwayScore int64) ([]byte, error) {
 	// Get a Firestore client.
 	ctx := context.Background()
-	client := CreateClient(ctx)
+	client := configs.CreateClient(ctx)
 	defer func(client *firestore.Client) {
 		err := client.Close()
 		if err != nil {
