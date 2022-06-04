@@ -34,6 +34,7 @@ type Data struct {
 	Awayteamid            string `json:"awayteamid"`
 	Currentteampossession string `json:"currentteampossession"`
 	Sport                 string `json:"sport"`
+	Playerid              string `json:"playerid"`
 }
 
 func listenToTriggers(w http.ResponseWriter, r *http.Request) {

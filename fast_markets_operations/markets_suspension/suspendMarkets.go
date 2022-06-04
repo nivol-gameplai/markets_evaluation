@@ -114,6 +114,7 @@ func updateSuspensionOnDocs(odd map[string]interface{}, currentScore int64,
 	}
 	if currentScore >= 0 {
 		odd["is_active"] = false
+		odd["freeze"] = false
 	}
 	err := tx.Set(&ref, odd)
 	if err != nil {

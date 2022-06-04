@@ -3,11 +3,14 @@ package configs
 import (
 	"fmt"
 	"github.com/gomodule/redigo/redis"
+	"os"
 )
 
 func InitializeRedis() (*redis.Pool, error) {
-	redisHost := "10.60.48.4"
-	redisPort := "6379"
+	redisHost := os.Getenv("REDISHOST")
+	//redisHost := "10.60.48.4"
+	//redisPort := "6379"
+	redisPort := os.Getenv("REDISPORT")
 	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 
 	const maxConnections = 20
