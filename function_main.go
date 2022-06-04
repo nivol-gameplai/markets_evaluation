@@ -5,7 +5,8 @@ import (
 	"fmt"
 	_ "github.com/GoogleCloudPlatform/functions-framework-go/funcframework"
 	"log"
-	fi "marketsEvaluation/fast_markets_operations"
+	"marketsEvaluation/fast_markets_operations"
+	"marketsEvaluation/fast_markets_operations/markets_suspension"
 	"net/http"
 	"os"
 	"reflect"
@@ -28,9 +29,11 @@ type Data struct {
 	Hometeamid            string `json:"hometeamid"`
 	Marketid              string `json:"marketid"`
 	Service               string `json:"service"`
-	Score                 string `json:"score"`
+	Metric                string `json:"metric"`     // the actual metric like score, assists etc
+	Metrictype            string `json:"metrictype"` //the string representation of the metric like "score"
 	Awayteamid            string `json:"awayteamid"`
 	Currentteampossession string `json:"currentteampossession"`
+	Sport                 string `json:"sport"`
 }
 
 func listenToTriggers(w http.ResponseWriter, r *http.Request) {
@@ -48,14 +51,14 @@ func listenToTriggers(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	score, err := strconv.ParseInt(data.Score, 10, 64)
+	metric, err := strconv.ParseInt(data.Metric, 10, 64)
 	if data.Service == "freeze" {
 		log.Println("market suspension service")
-		fi.DetermineSuspensionStrategy("next_bucket", data.Currentteampossession,
-			data.Hometeamid, data.Gameid, data.Awayteamid)
+		markets_suspension.DetermineSuspensionStrategy("next_bucket", data.Currentteampossession,
+			data.Hometeamid, data.Gameid, data.Awayteamid, metric)
 	} else if data.Service == "evaluation" {
 		log.Println("market evaluation service")
-		_, err = fi.FetchAndEvaluate(data.Gameid, data.Marketid, score)
+		_, err = fast_markets_operations.FetchAndEvaluate(data.Gameid, data.Marketid, metric, data.Metrictype, data.Sport)
 	}
 	s := fmt.Sprintf("Hello, %s! ID: %s", "", string(r.Header.Get("Ce-Id")))
 	_, err = fmt.Fprintln(w, s)
@@ -85,17 +88,23 @@ func testHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	data := Data{}
 	e := `{"gameid": "28810038", "teamid": "3416", "marketid": "NA","service": "freeze", "score":"-1"}`
-	json.Unmarshal([]byte(string(e)), &data)
-	score, _ := strconv.ParseInt(data.Score, 10, 64)
+	err := json.Unmarshal([]byte(string(e)), &data)
+	if err != nil {
+		return
+	}
+	score, _ := strconv.ParseInt(data.Metric, 10, 64)
 	log.Println(score)
 	fmt.Println(reflect.TypeOf(score))
-	fi.MarketSuspension(data.Gameid, data.Hometeamid, score)
+	_, err = markets_suspension.MarketSuspension(data.Gameid, data.Hometeamid, score)
+	if err != nil {
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
 func marketsSuspensionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, err := fi.MarketSuspension("28810038", "3416", -1)
+	_, err := markets_suspension.MarketSuspension("28810038", "3416", -1)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
@@ -104,7 +113,8 @@ func marketsSuspensionHandler(w http.ResponseWriter, r *http.Request) {
 
 func marketsEvaluationHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, err := fi.FetchAndEvaluate("28810038", "home_2pt", 125)
+	_, err := fast_markets_operations.FetchAndEvaluate("28810038", "home_2pt", 125,
+		"score", "NBA")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
