@@ -6,6 +6,18 @@ import (
 	"os"
 )
 
+/*
+// ==================================================================
+// https://firebase.google.com/docs/admin/setup
+// ==================================================================
+// CreateClient /*
+//initialization of the redis client (memorystore)
+//by reading host and port as environment variable
+//INPUTS:
+//	redis Pool
+//OUTPUTS:
+//	initialized redis pool
+*/
 func InitializeRedis() (*redis.Pool, error) {
 	redisHost := os.Getenv("REDISHOST")
 	//redisHost := "10.60.48.4"

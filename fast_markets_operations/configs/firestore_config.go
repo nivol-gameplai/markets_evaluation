@@ -7,8 +7,19 @@ import (
 	"os"
 )
 
-// [END admin_import]
+// [END import]
 
+// ==================================================================
+// https://firebase.google.com/docs/admin/setup
+// ==================================================================
+// CreateClient /*
+//initialization of the firestore client
+//by reading project id as environment variable
+//INPUTS:
+//	context
+//OUTPUTS:
+//	firestore client
+//ATTENTION: defer the client on the calling function/	*/
 func CreateClient(ctx context.Context) *firestore.Client {
 	// Sets your Google Cloud Platform project ID.
 	//projectID := "braided-triode-232313"

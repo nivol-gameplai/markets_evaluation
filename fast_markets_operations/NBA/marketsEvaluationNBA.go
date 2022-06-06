@@ -6,11 +6,18 @@ import (
 	"time"
 )
 
-func teamMarketsEvaluation(odd map[string]interface{}, teamScore int64, additiveScore int) (response *string) {
-	fulfillmentScore := odd["fulfillment_score"].(int64)
-	currentTeamScore := odd["current_team_score"].(int64)
-	if (currentTeamScore + int64(additiveScore)) == fulfillmentScore {
-		if teamScore == fulfillmentScore {
+// teamMarketsEvaluation veluates the markets based on the metric and fulfillmentMetric and current metric value
+// i.e current score (current metric) = 125 if market = 2pts for score then if current metric (score) on odd doc
+// is 123 and additive metric is 2 (as of 2pts evaluation) then the fulfillmentMetric is true 125 and the market is won
+//TODO send messaged to client's for betslip evaluation
+func teamMarketsEvaluation(odd map[string]interface{}, metric int64, additiveMetric int, metricType string) (response *string) {
+	queryMapForMarket := DetermineQueryMetricParameter(metricType)
+	currentMetricFieldString := queryMapForMarket["currentMetric"]
+	fulfillmentMetricFieldString := queryMapForMarket["fulfillmentMetric"]
+	fulfillmentMetric := odd[fulfillmentMetricFieldString].(int64)
+	currentMetric := odd[currentMetricFieldString].(int64)
+	if (currentMetric + int64(additiveMetric)) == fulfillmentMetric {
+		if metric == fulfillmentMetric {
 			ret := "WON"
 			return &ret
 		} else {
@@ -22,24 +29,22 @@ func teamMarketsEvaluation(odd map[string]interface{}, teamScore int64, additive
 	return nil
 }
 
+// EvaluateMarket receives an odd document as input, and the based on market id,
+// it retrives fullfilment and market details before calling the MarketsEvaluation
+// to determing outcome for the odd(market)
+// finally it updates the odd doc
 func EvaluateMarket(odd map[string]interface{}, playerOrTeamScore int64,
-	tx *firestore.Transaction, ref firestore.DocumentRef, wg *sync.WaitGroup) {
-	//TODO CHECK IF THE CURRENT SCORE ON THE ODD (THE ONE OF DURING THE ODD CREATION)
-	//TODO + THE 2 POINTS ETC == FULFILLMENT SCORE AND CURRENT SCORE FROM MESSAGE AND IF MISSED HAVE A REPLAY FUNCTION
-	//TODO RUN THE API AGAIN AND CHECK ALL ACTIVES AND RE-CLOSE BY REPLAYING ALL EVENTS FROM SCRATCH AND PUT STATUS TO DEFFERED
-	//TODO THIS SHOULD BE THE LIVE EVENTS SERVICE RUN WITHOUT THE REDIS CHECK OF EVENT ID BEING PROCESSED, THIS CAN BE
-	//TODO DONE CONTINIOUSLY THROUGHOUT THE GAME , TO MAKE SURE ALL MARKETS ARE PROCESSED WHILE ACTIVE
+	tx *firestore.Transaction, ref firestore.DocumentRef, wg *sync.WaitGroup, metricType string) {
 
-	//TODO ALOSSSSSOOOO WHEN MARKETS CLOSED AS WON OR LOST SEND MESSAGE TO EVAL BETS AS NOW WE ARE SURE MARKETS ARE CLOSED :)
 	defer wg.Done()
 	var oddState *string
 	oddState = nil
 	marketID := odd["market_id"].(string)
 	additiveScoreMap := MarketSelection(marketID)
-	scoreToAdd := additiveScoreMap["pointsToEval"].(int)
+	scoreToAdd := additiveScoreMap["metricToEval"].(int)
 	isItTeamOrPlayer := additiveScoreMap["teamorplayer"].(string)
 	if isItTeamOrPlayer == "team" {
-		oddState = teamMarketsEvaluation(odd, playerOrTeamScore, scoreToAdd)
+		oddState = teamMarketsEvaluation(odd, playerOrTeamScore, scoreToAdd, metricType)
 	}
 	if oddState != nil {
 		odd["status"] = "CLOSED"

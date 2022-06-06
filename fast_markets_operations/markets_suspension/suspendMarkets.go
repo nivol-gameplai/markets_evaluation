@@ -8,12 +8,21 @@ import (
 	"log"
 	"marketsEvaluation/fast_markets_operations/configs"
 	"sync"
+	"time"
 )
 
 var redisPool *redis.Pool
 
+// DetermineSuspensionStrategy this function accepts tries to enforce the rules of the markets suspension strategy
+// calls MarketSuspension to be enforced based on the strategy
+// INPUTS:
+//   strategy string i.e. next_bucket, team that has the ball possession (soccer, nba) string i.e. home/away string i.e.
+//   and home/away team ids and gameid as string. Finally, current metric as an int
+//  (could be score, assists and other metrics related to markets.)
+// everything Reads and Writes from Firestore are performed under a transaction to make sure clients are not reading stale
+// data
 func DetermineSuspensionStrategy(strategy string, currentTeamPossession string, homeTeamId string, gameId string,
-	awayTeamId string, score int64) {
+	awayTeamId string, metric int64) {
 	if strategy == "next_bucket" {
 		var previousTeamPossession string
 		previousTeamPossession = ""
@@ -48,7 +57,7 @@ func DetermineSuspensionStrategy(strategy string, currentTeamPossession string, 
 			} else {
 				teamMarketsToSuspend = homeTeamId
 			}
-			_, err = MarketSuspension(gameId, teamMarketsToSuspend, score)
+			_, err = MarketSuspension(gameId, teamMarketsToSuspend, metric)
 			if err != nil {
 				log.Fatal(err)
 				return
@@ -61,7 +70,11 @@ func DetermineSuspensionStrategy(strategy string, currentTeamPossession string, 
 	}
 }
 
-func MarketSuspension(gameId string, teamId string, currentScore int64) ([]byte, error) {
+// MarketSuspension executes odds queries based on parameters to suspend
+// specific markets based on metric (will determine the markets), the teamid (will only need to suspend markets of specific
+// team or if teamId ="NA" it will suspend all active markets
+// calls updateSuspensionOnDocs as a go routine (threads) to update all market docs on parallel
+func MarketSuspension(gameId string, teamId string, metric int64) ([]byte, error) {
 	ctx := context.Background()
 	client := configs.CreateClient(ctx)
 	defer configs.CloseClient(client)
@@ -69,13 +82,16 @@ func MarketSuspension(gameId string, teamId string, currentScore int64) ([]byte,
 	col := client.Collection("Odds")
 	var wg sync.WaitGroup
 
-	if currentScore < 0 {
+	if metric < 0 && teamId != "NA" {
 
 		query = col.Where("game_id", "==", gameId).Where("is_active", "==",
 			true).Where("team_id", "==", teamId)
+	} else if metric >= 0 && teamId != "NA" {
+		query = col.Where("game_id", "==", gameId).Where("is_active", "==",
+			true).Where("team_id", "==", teamId).Where("current_team_score", "<=", metric)
 	} else {
 		query = col.Where("game_id", "==", gameId).Where("is_active", "==",
-			true).Where("team_id", "==", teamId).Where("current_team_score", "<=", currentScore)
+			true)
 	}
 
 	err := client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
@@ -89,7 +105,7 @@ func MarketSuspension(gameId string, teamId string, currentScore int64) ([]byte,
 			}
 			wg.Add(1)
 
-			go updateSuspensionOnDocs(doc.Data(), currentScore, tx, *doc.Ref, &wg)
+			go updateSuspensionOnDocs(doc.Data(), metric, tx, *doc.Ref, &wg)
 
 		}
 		wg.Wait()
@@ -101,21 +117,25 @@ func MarketSuspension(gameId string, teamId string, currentScore int64) ([]byte,
 	return nil, nil
 }
 
-func updateSuspensionOnDocs(odd map[string]interface{}, currentScore int64,
+//updateSuspensionOnDocs peferms the actual suspension (freeze) on the markets and saves them back to the
+// irrelevant of the amount of the docs (could be 10s of thousdands) the transactions are completed
+// in parallel in milliseconds
+func updateSuspensionOnDocs(odd map[string]interface{}, metric int64,
 	tx *firestore.Transaction, ref firestore.DocumentRef, wg *sync.WaitGroup) {
 	defer wg.Done()
 	if odd["freeze"] == true {
 
 		odd["freeze"] = false
 	} else {
-		if currentScore < 0 {
+		if metric < 0 {
 			odd["freeze"] = true
 		}
 	}
-	if currentScore >= 0 {
+	if metric >= 0 {
 		odd["is_active"] = false
 		odd["freeze"] = false
 	}
+	odd["modified"] = time.Now().UnixNano() / int64(time.Millisecond)
 	err := tx.Set(&ref, odd)
 	if err != nil {
 		return

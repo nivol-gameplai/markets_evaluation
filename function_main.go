@@ -24,6 +24,10 @@ type PubSubMessage struct {
 	Subscription string `json:"subscription"`
 }
 
+// if marketid == all then fetch all open markets to eval.First freeze them all.
+//then evaluate them by fetching latest stats from live (includes all players teams over/under etc.)
+//if both marketid == all and currentteampossession ="NA" and service == freeze the freeze all markets across
+// The struct here denotes the structure of the payload of the message arriving as json grpc
 type Data struct {
 	Gameid                string `json:"gameid"`
 	Hometeamid            string `json:"hometeamid"`
@@ -37,6 +41,10 @@ type Data struct {
 	Playerid              string `json:"playerid"`
 }
 
+// this function is responding to eventarc triggers (here pub/sub)
+// then based on the content of the message and specifically the service field
+// it either initiates market suspension logic or evaluation logic
+// also if it chooses evaluation service then the sport(NBA,soccer,NFL..) needs to be supplied
 func listenToTriggers(w http.ResponseWriter, r *http.Request) {
 	var e PubSubMessage
 	if err := json.NewDecoder(r.Body).Decode(&e); err != nil {
@@ -69,6 +77,7 @@ func listenToTriggers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// main handlers for the listenToTriggers and rest (test functions)
 func main() {
 	http.HandleFunc("/", listenToTriggers)
 	http.HandleFunc("/test", testHandler)
@@ -84,6 +93,8 @@ func main() {
 	log.Printf("Open http://localhost:%s in the browser", port)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
 }
+
+// test handlers to invoke services outside of eventarc
 
 func testHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

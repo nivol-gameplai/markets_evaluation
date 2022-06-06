@@ -10,6 +10,9 @@ import (
 	"sync"
 )
 
+// FetchAndEvaluate constructs the query to fetch the markets to be evaluated based on parameters
+// it runs within a transaction and calls the EvaluateMarket function within go routine (threading)
+// for details in parameters see EvaluateMarket function
 func FetchAndEvaluate(gameId string, marketId string, metric int64, metricType string, sport string) ([]byte, error) {
 	// Get a Firestore client.
 	ctx := context.Background()
@@ -28,7 +31,7 @@ func FetchAndEvaluate(gameId string, marketId string, metric int64, metricType s
 	err := client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		col := client.Collection("Odds")
 		if sport == "NBA" {
-			queryParameter = NBA.DetermineQueryMetricParameter(metricType)
+			queryParameter = NBA.DetermineQueryMetricParameter(metricType)["currentMetric"]
 		} else if sport == "soccer" {
 			log.Println("TBA soccer")
 		}
@@ -46,7 +49,7 @@ func FetchAndEvaluate(gameId string, marketId string, metric int64, metricType s
 			}
 			wg.Add(1)
 			if sport == "NBA" {
-				go NBA.EvaluateMarket(doc.Data(), metric, tx, *doc.Ref, &wg)
+				go NBA.EvaluateMarket(doc.Data(), metric, tx, *doc.Ref, &wg, metricType)
 			} else if sport == "soccer" {
 				log.Println("TBA soccer")
 			}
